@@ -1,0 +1,14 @@
+127.0.0.1 - - [08/May/2026 15:49:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [08/May/2026 15:49:59] "GET /api/history HTTP/1.1" 200 -
+127.0.0.1 - - [08/May/2026 15:49:59] "POST /api/research HTTP/1.1" 200 -
+127.0.0.1 - - [08/May/2026 15:50:15] "GET /styles.css HTTP/1.1" 200 -
+127.0.0.1 - - [08/May/2026 15:50:15] "GET /app.js HTTP/1.1" 200 -
+127.0.0.1 - - [08/May/2026 15:51:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [08/May/2026 15:51:08] "GET /styles.css HTTP/1.1" 200 -
+127.0.0.1 - - [08/May/2026 15:51:08] "GET /app.js HTTP/1.1" 200 -
+127.0.0.1 - - [08/May/2026 15:51:09] "GET /api/history HTTP/1.1" 200 -
+127.0.0.1 - - [08/May/2026 15:51:11] "POST /api/research HTTP/1.1" 200 -
+127.0.0.1 - - [08/May/2026 15:51:19] "POST /api/research HTTP/1.1" 200 -
+127.0.0.1 - - [08/May/2026 15:51:20] "POST /api/history HTTP/1.1" 201 -
+127.0.0.1 - - [08/May/2026 15:51:53] "POST /api/research HTTP/1.1" 200 -
+127.0.0.1 - - [08/May/2026 15:51:53] "POST /api/history HTTP/1.1" 201 -

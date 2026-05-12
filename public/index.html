@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Insta List</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace">
+        <aside class="panel input-panel">
+          <div class="brand-row">
+            <div>
+              <p class="eyebrow">Insta List</p>
+              <h1>Influencer Audit</h1>
+            </div>
+            <span id="dedupeCount" class="count-pill">0 unique</span>
+          </div>
+
+          <section class="settings-group">
+            <label class="field">
+              <span>Influencer Handles / URLs</span>
+            <textarea id="handleInput" spellcheck="false" placeholder="Cristiano Ronaldo
+@handle, 125k followers, 842 posts
+https://instagram.com/another_handle, 58,200 followers, 311 posts
+creator.name"></textarea>
+            </label>
+          </section>
+
+          <details class="settings-panel">
+            <summary>Optional Instagram export JSON</summary>
+            <label class="field">
+            <textarea id="jsonInput" spellcheck="false" placeholder='[
+  {
+    "handle": "creator",
+    "followers": 125000,
+    "postCount": 842,
+    "posts": [
+      {
+        "url": "https://instagram.com/p/example",
+        "date": "2026-04-18",
+        "caption": "New launch #beauty with @brand",
+        "collaborators": ["brand"],
+        "info": "Details at https://example.com"
+      }
+    ]
+  }
+]'></textarea>
+            </label>
+          </details>
+
+          <div class="control-grid">
+              <label class="field">
+                <span>Keywords</span>
+                <input id="keywordsInput" placeholder="ad, collab, giveaway">
+              </label>
+              <label class="field">
+                <span>Audit Period</span>
+                <input id="periodInput" value="a month ago" placeholder="a month ago">
+              </label>
+              <label class="field">
+                <span>Audit Label</span>
+                <input id="searchLabel" placeholder="Campaign name">
+              </label>
+          </div>
+
+          <details class="settings-panel">
+            <summary>Graph API settings <span id="graphStatus">Off</span></summary>
+            <label class="field">
+              <span>API version</span>
+              <input id="graphApiVersion" value="v25.0" placeholder="v25.0">
+            </label>
+            <label class="field" style="display: none;">
+              <span>Your IG user ID</span>
+              <input id="graphIgUserId" placeholder="17841400000000000">
+            </label>
+            <label class="field">
+              <span>Access token</span>
+              <input id="graphAccessToken" type="password" placeholder="Paste token to save or replace">
+            </label>
+            <label class="field">
+              <span>Test target handle</span>
+              <input id="graphTestHandle" value="bluebottle" placeholder="bluebottle">
+            </label>
+            <div class="graph-actions">
+              <button id="saveGraphButton" class="ghost-button" type="button">Save Graph API</button>
+              <button id="testGraphButton" class="ghost-button" type="button">Test API</button>
+            </div>
+            <p id="graphTestResult" class="api-test-result">Paste your values, save, then test before running the full list.</p>
+          </details>
+
+          <details class="settings-panel">
+            <summary>AI Research settings <span id="aiStatus">Off</span></summary>
+            <label class="field row-field">
+              <input id="aiEnabled" type="checkbox">
+              <span>Enable AI Research fallback</span>
+            </label>
+            <label class="field">
+              <span>AI Provider</span>
+              <select id="aiProvider">
+                <option value="gemini">Google Gemini (Cloud)</option>
+                <option value="ollama">Ollama (Local - No Limits)</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Gemini API Key</span>
+              <input id="aiApiKey" type="password" placeholder="Paste Gemini API Key">
+            </label>
+            <label class="field">
+              <span>AI Model</span>
+              <input id="aiModel" value="gemini-2.0-flash" placeholder="gemini-2.0-flash">
+            </label>
+            <div class="graph-actions">
+              <button id="saveAiButton" class="ghost-button" type="button">Save AI Settings</button>
+            </div>
+            <p class="api-test-result">If Graph API fails, the AI will attempt to find influencer stats.</p>
+          </details>
+          
+          <section id="analysisProgress" class="progress-section hidden">
+            <div class="progress-info">
+              <span id="progressStatus">Preparing...</span>
+              <span id="progressPercent">0%</span>
+            </div>
+            <div class="progress-container">
+              <div id="progressBar" class="progress-bar" style="width: 0%"></div>
+            </div>
+          </section>
+
+          <div class="button-row">
+            <button id="runButton" class="primary-button">Analyze</button>
+            <button id="seedButton" class="ghost-button">Load list</button>
+            <button id="demoButton" class="ghost-button">Demo</button>
+            <button id="clearButton" class="ghost-button">Clear</button>
+          </div>
+        </aside>
+
+        <section class="results-area">
+          <div class="toolbar">
+            <div>
+              <p class="eyebrow">Results</p>
+              <h2 id="resultTitle">No search yet</h2>
+            </div>
+            <div class="summary-strip">
+              <span><strong id="influencerTotal">0</strong> influencers</span>
+              <span><strong id="postTotal">0</strong> posts</span>
+              <span><strong id="linkTotal">0</strong> links</span>
+            </div>
+          </div>
+
+          <div class="view-switch">
+            <button id="influencerViewButton" class="view-button active" type="button">Influencers</button>
+            <button id="postsViewButton" class="view-button" type="button">Posts</button>
+          </div>
+
+          <div id="influencerList" class="influencer-list empty-state">
+            Paste handles, add optional exported post data, then run an audit.
+          </div>
+          <div id="postsList" class="posts-list empty-state hidden">
+            Run an audit, then open the Posts view.
+          </div>
+        </section>
+
+        <aside class="panel history-panel">
+          <div class="history-head">
+            <div>
+              <p class="eyebrow">History</p>
+              <h2>Previous searches</h2>
+            </div>
+          </div>
+          <div id="historyList" class="history-list empty-state">No saved searches yet.</div>
+        </aside>
+      </section>
+    </main>
+
+    <template id="influencerTemplate">
+      <article class="influencer-row">
+        <button class="row-main" type="button">
+          <span class="avatar"></span>
+          <span>
+            <strong class="handle"></strong>
+            <small class="meta"></small>
+          </span>
+          <span class="stat-cell">
+            <strong class="followers"></strong>
+            <small>Followers</small>
+          </span>
+          <span class="stat-cell">
+            <strong class="post-count"></strong>
+            <small>Total posts</small>
+          </span>
+          <span class="stat-cell">
+            <strong class="period-posts"></strong>
+            <small>In period</small>
+          </span>
+          <span class="stat-cell">
+            <strong class="period-links"></strong>
+            <small>Links checked</small>
+          </span>
+        </button>
+        <div class="post-panel"></div>
+      </article>
+    </template>
+
+    <template id="postTemplate">
+      <section class="post-card">
+        <div class="post-head">
+          <a class="post-url" target="_blank" rel="noreferrer"></a>
+          <span class="post-date"></span>
+        </div>
+        <p class="post-info"></p>
+        <div class="tag-row hashtags"></div>
+        <div class="tag-row collaborators"></div>
+        <div class="link-list"></div>
+      </section>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>

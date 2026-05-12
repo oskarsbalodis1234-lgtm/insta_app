@@ -1,0 +1,15 @@
+# Local data and sensitive configurations
+data/history.json
+data/graph_config.json
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node.js artifacts
+node_modules/
+npm-debug.log*
+
+# System files
+.DS_Store

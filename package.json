@@ -1,0 +1,12 @@
+{
+  "name": "insta-list",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Instagram influencer list cleaner, post inspector, link checker, and history viewer.",
+  "scripts": {
+    "start": "py server.py"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
