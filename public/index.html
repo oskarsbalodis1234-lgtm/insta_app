@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Insta List</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
     <main class="app-shell">
@@ -71,7 +72,7 @@ creator.name"></textarea>
               <span>API version</span>
               <input id="graphApiVersion" value="v25.0" placeholder="v25.0">
             </label>
-            <label class="field" style="display: none;">
+            <label class="field">
               <span>Your IG user ID</span>
               <input id="graphIgUserId" placeholder="17841400000000000">
             </label>
@@ -90,33 +91,6 @@ creator.name"></textarea>
             <p id="graphTestResult" class="api-test-result">Paste your values, save, then test before running the full list.</p>
           </details>
 
-          <details class="settings-panel">
-            <summary>AI Research settings <span id="aiStatus">Off</span></summary>
-            <label class="field row-field">
-              <input id="aiEnabled" type="checkbox">
-              <span>Enable AI Research fallback</span>
-            </label>
-            <label class="field">
-              <span>AI Provider</span>
-              <select id="aiProvider">
-                <option value="gemini">Google Gemini (Cloud)</option>
-                <option value="ollama">Ollama (Local - No Limits)</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Gemini API Key</span>
-              <input id="aiApiKey" type="password" placeholder="Paste Gemini API Key">
-            </label>
-            <label class="field">
-              <span>AI Model</span>
-              <input id="aiModel" value="gemini-2.0-flash" placeholder="gemini-2.0-flash">
-            </label>
-            <div class="graph-actions">
-              <button id="saveAiButton" class="ghost-button" type="button">Save AI Settings</button>
-            </div>
-            <p class="api-test-result">If Graph API fails, the AI will attempt to find influencer stats.</p>
-          </details>
-          
           <section id="analysisProgress" class="progress-section hidden">
             <div class="progress-info">
               <span id="progressStatus">Preparing...</span>
@@ -145,12 +119,20 @@ creator.name"></textarea>
               <span><strong id="influencerTotal">0</strong> influencers</span>
               <span><strong id="postTotal">0</strong> posts</span>
               <span><strong id="linkTotal">0</strong> links</span>
+              <button id="exportButton" class="ghost-button" style="margin-left: auto; border-color: #4f46e5; color: #818cf8;">Export Report (CSV)</button>
             </div>
           </div>
 
           <div class="view-switch">
             <button id="influencerViewButton" class="view-button active" type="button">Influencers</button>
             <button id="postsViewButton" class="view-button" type="button">Posts</button>
+          </div>
+
+          <div id="dashboardSection" class="dashboard-area hidden" style="padding: 1.5rem; background: #1e293b; border-radius: 12px; margin-bottom: 1.5rem; border: 1px solid #334155;">
+            <h3 style="margin-top: 0; color: #f1f5f9; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em;">Audience Distribution</h3>
+            <div style="height: 200px; position: relative;">
+              <canvas id="statsChart"></canvas>
+            </div>
           </div>
 
           <div id="influencerList" class="influencer-list empty-state">

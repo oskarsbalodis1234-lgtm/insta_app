@@ -5,6 +5,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 import json
 import mimetypes
+import os
 import re
 import socket
 import ssl
@@ -18,7 +19,8 @@ PUBLIC_DIR = ROOT / "public"
 DATA_DIR = ROOT / "data"
 HISTORY_FILE = DATA_DIR / "history.json"
 GRAPH_CONFIG_FILE = DATA_DIR / "graph_config.json"
-PORT = 5173
+PORT = int(os.environ.get("PORT", "5173"))
+HOST = os.environ.get("HOST", "0.0.0.0")
 
 KNOWN_ACCOUNT_ALIASES = {
     "cristiano ronaldo": {"handle": "cristiano", "name": "Cristiano Ronaldo"},
@@ -75,10 +77,6 @@ def read_graph_config(include_token=False):
         "igUserId": str(config.get("igUserId") or "").strip(),
         "accessToken": str(config.get("accessToken") or "").strip(),
         "keywords": str(config.get("keywords") or "").strip(),
-        "aiEnabled": bool(config.get("aiEnabled", False)),
-        "aiProvider": str(config.get("aiProvider") or "gemini").strip(),
-        "aiApiKey": str(config.get("aiApiKey") or "").strip(),
-        "aiModel": str(config.get("aiModel") or "gemini-2.0-flash").strip(),
     }
     if include_token:
         return clean
@@ -88,10 +86,6 @@ def read_graph_config(include_token=False):
         "igUserId": clean["igUserId"],
         "configured": bool(clean["igUserId"] and clean["accessToken"]),
         "keywords": clean["keywords"],
-        "aiEnabled": clean["aiEnabled"],
-        "aiProvider": clean["aiProvider"],
-        "aiModel": clean["aiModel"],
-        "aiConfigured": bool(clean["aiApiKey"]),
         "tokenPreview": f"{clean['accessToken'][:6]}..." if clean["accessToken"] else "",
     }
 
@@ -100,14 +94,10 @@ def write_graph_config(config):
     ensure_data_store()
     previous = read_graph_config(include_token=True)
     cleaned = {
-        "apiVersion": str(config.get("apiVersion") or previous.get("apiVersion", "v25.0")).strip().lstrip("/"),
-        "igUserId": str(config.get("igUserId", previous.get("igUserId", ""))).strip(),
-        "accessToken": str(config.get("accessToken") or "").strip() or previous.get("accessToken", ""),
+        "apiVersion": str(config.get("apiVersion") or previous.get("apiVersion") or "v25.0").strip().lstrip("/"),
+        "igUserId": str(config.get("igUserId") or previous.get("igUserId") or "").strip(),
+        "accessToken": str(config.get("accessToken") or previous.get("accessToken") or "").strip(),
         "keywords": str(config.get("keywords", previous.get("keywords", ""))).strip(),
-        "aiEnabled": config.get("aiEnabled", previous.get("aiEnabled", False)),
-        "aiProvider": str(config.get("aiProvider", previous.get("aiProvider", "gemini"))).strip(),
-        "aiApiKey": str(config.get("aiApiKey", "")).strip() or previous.get("aiApiKey", ""),
-        "aiModel": str(config.get("aiModel", previous.get("aiModel", "gemini-2.0-flash"))).strip(),
     }
     if not re.match(r"^v\d+\.\d+$", cleaned["apiVersion"]):
         cleaned["apiVersion"] = "v25.0"
@@ -180,13 +170,39 @@ def resolve_account(value):
     return None
 
 
-def graph_request(path, params, config):
-    query = urlencode({**params, "access_token": config["accessToken"]})
+def graph_request(path, params, config, token_index=0):
+    # Split tokens to support rotation if user provides multiple (comma separated)
+    tokens = [t.strip() for p in config["accessToken"].split(",") if (t := p.strip())]
+    if not tokens:
+        raise Exception("No Access Token configured.")
+    
+    # Wrap around if index exceeds length
+    token = tokens[token_index % len(tokens)]
+    
+    query = urlencode({**params, "access_token": token})
     url = f"https://graph.facebook.com/{config['apiVersion']}/{path}?{query}"
-    print(f"DEBUG: Calling Graph API: https://graph.facebook.com/{config['apiVersion']}/{path}?fields=...")
     request = Request(url, headers={"User-Agent": "InstaListGraphClient/1.0"})
-    with urlopen(request, timeout=20, context=ssl.create_default_context()) as response:
-        return json.loads(response.read().decode("utf-8"))
+    
+    try:
+        with urlopen(request, timeout=25, context=ssl.create_default_context()) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as e:
+        err_data = json.loads(e.read().decode("utf-8"))
+        error_msg = err_data.get("error", {}).get("message", "")
+        error_code = err_data.get("error", {}).get("code", 0)
+        
+        # Handle Rate Limiting (Error code 4 or 17)
+        if (error_code == 4 or error_code == 17) and len(tokens) > 1 and token_index < len(tokens):
+            print(f"DEBUG: Rate limit on token {token_index + 1}. Rotating...")
+            return graph_request(path, params, config, token_index + 1)
+        
+        # If it's a rate limit and we have no more tokens, wait a bit if it's the first retry
+        if (error_code == 4 or error_code == 17) and token_index == 0:
+            print("DEBUG: Rate limit reached. Sleeping for 5s before fallback...")
+            time.sleep(5)
+            
+        raise Exception(error_msg or str(e))
+
 
 
 def normalize_graph_post(post):
@@ -206,137 +222,6 @@ def normalize_graph_post(post):
         "children": children,
     }
 
-
-def fetch_web_context(handle):
-    """Fetches real-time snippets from DuckDuckGo to provide 'eyes' to the AI."""
-    try:
-        # Broad query for better snippets
-        query = f"instagram {handle} followers posts"
-        url = f"https://duckduckgo.com/lite/?q={urlencode({'q': query})}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        req = Request(url, headers=headers)
-        with urlopen(req, timeout=10) as resp:
-            content = resp.read().decode("utf-8")
-            # Extremely robust extraction: look for anything between result-link/snippet classes OR generic link text
-            raw_results = re.findall(r'class="result-(?:link|snippet)"[^>]*>(.*?)<', content, re.S)
-            context_parts = []
-            for snippet in raw_results[:15]:
-                clean_text = snippet.strip()
-                clean_text = re.sub(r'<[^>]+>', '', clean_text).replace("&nbsp;", " ").strip()
-                if clean_text:
-                    context_parts.append(clean_text)
-
-            # Plan B: If regex fails, just grab the first 1000 characters of the body text
-            if not context_parts:
-                body_text = re.sub(r'<[^>]+>', ' ', content)
-                return body_text[:1000]
-
-            return " ".join(context_parts)
-    except Exception as e:
-        print(f"DEBUG: Web search failed: {e}")
-        return ""
-
-def ai_research_account(handle, config, retry_count=0):
-    provider = config.get("aiProvider", "gemini")
-    url = ""
-    web_context = fetch_web_context(handle)
-    
-    print(f"DEBUG: AI Research for @{handle}")
-    print(f"DEBUG: Web Context: {web_context[:500]}...") # Log first 500 chars of web context
-    
-    if provider == "ollama":
-        url = "http://localhost:11434/api/chat" # Ollama endpoint
-        model = config['aiModel'] # Use the configured Ollama model
-    else:
-        url = f"https://generativelanguage.googleapis.com/v1/models/{config['aiModel']}:generateContent?key={config['aiApiKey']}"
-        model = config['aiModel']
-
-    prompt = (
-        f"CONTEXT: Instagram metrics for @{handle}.\n"
-        f"SEARCH_DATA: {web_context if web_context else 'None'}\n\n"
-        "INSTRUCTIONS: Extract followers and postCount. IG post counts almost never exceed 60,000. "
-        "If the search data is thin, do not hallucinate large numbers for posts.\n\n"
-        "TASK:\n"
-        "1. Extract 'followers' (e.g., 660M, 500K).\n"
-        "2. Extract 'postCount'. If the number is in Millions/Billions, it is likely the follower count; "
-        "set postCount to 'unknown' instead of using that number.\n"
-        "3. Use internal knowledge if SEARCH_DATA is missing, but add '[Static]' to the name.\n"
-        "4. Output valid JSON only.\n\n"
-        "JSON SCHEMA: {\"followers\": \"string\", \"postCount\": \"string\", \"name\": \"string\", \"posts\": []}"
-    )
-
-    try:
-        if provider == "ollama":
-            payload = {
-                "model": model, # Use the configured Ollama model
-                "messages": [
-                    {"role": "system", "content": "You are a data extraction agent. You must output valid JSON. Always distinguish between Followers (large) and Posts (small). Never report billions of posts."},
-                    {"role": "user", "content": prompt}
-                ],
-                "stream": False,
-                "format": "json",
-                "options": {"temperature": 0.1, "seed": 42} # Reduce randomness for factual responses
-            }
-        else:
-            payload = { # Gemini payload already includes google_search tool
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {} # JSON mode is currently incompatible with Google Search tool
-            }
-
-        data = json.dumps(payload).encode("utf-8")
-        req = Request(url, data=data, headers={"Content-Type": "application/json"})
-        with urlopen(req, timeout=120) as resp:
-            res = json.loads(resp.read().decode("utf-8"))
-            if provider == "ollama":
-                text = res.get("message", {}).get("content", "{}")
-            else:
-                if "error" in res:
-                    raise Exception(res["error"].get("message", "Gemini API Error"))
-                text = res["candidates"][0]["content"]["parts"][0]["text"]
-
-            print(f"DEBUG: Raw AI Response for @{handle}: {text[:500]}...") # Log raw AI response
-
-            # Robust JSON extraction: find the first { and last }
-            json_match = re.search(r"(\{.*\})", text, re.S)
-            if json_match:
-                text = json_match.group(1)
-            else:
-                print(f"DEBUG: No valid JSON found in AI response for @{handle}. Defaulting to empty JSON.")
-                text = "{}"
-            
-            ai_data = json.loads(text)
-            print(f"DEBUG: Parsed AI Data for @{handle}: {ai_data}")
-
-            followers_parsed = parse_count(ai_data.get("followers"))
-            post_count_parsed = parse_count(ai_data.get("postCount"), is_post_count=True)
-            print(f"DEBUG: Parsed Followers: {followers_parsed}, Parsed Post Count: {post_count_parsed}")
-
-            return {
-                "handle": handle,
-                "ok": bool(followers_parsed), # Check if parsed followers is a valid number
-                "followers": followers_parsed,
-                "postCount": post_count_parsed,
-                "name": ai_data.get("name"),
-                "posts": [{"url": p["url"], "date": p["date"], "info": p["caption"], "links": []} for p in ai_data.get("posts", [])],
-                "source": "ai",
-                "message": "Researched using AI.",
-                "researchedAt": datetime.now(timezone.utc).isoformat(),
-                "researchOk": True
-            }
-    except (socket.timeout, TimeoutError):
-        msg = "AI research timed out (120s). This usually happens during the initial model load. Try again."
-        print(f"ERROR: {msg}")
-        return {"handle": handle, "ok": False, "message": msg}
-    except URLError as e:
-        msg = "Ollama connection refused. Is the Ollama app running?" if provider == "ollama" else f"Network error: {str(e)}"
-        print(f"ERROR: {msg}")
-        return {"handle": handle, "ok": False, "message": msg}
-    except json.JSONDecodeError as e:
-        msg = f"AI returned invalid JSON: {e}. Raw response: {text[:200]}..."
-        print(f"ERROR: {msg}")
-        return {"handle": handle, "ok": False, "message": msg}
-    except Exception as e:
-        return {"handle": handle, "ok": False, "message": f"AI error: {str(e)}"}
 
 def graph_research_account(handle, config):
     try:
@@ -371,24 +256,17 @@ def graph_research_account(handle, config):
 def research_influencer(value):
     account = resolve_account(value)
     if not account:
-        return {"input": value, "ok": False, "message": "Invalid handle."}
-    
+        return {"handle": value, "ok": False, "message": "Invalid handle."}
+
     config = read_graph_config(include_token=True)
-    result = {"ok": False, "message": "Graph API not configured."}
 
     if config.get("igUserId") and config.get("accessToken"):
-        result = graph_research_account(account["handle"], config)
+        try:
+            return graph_research_account(account["handle"], config)
+        except Exception as e:
+            return {"handle": account["handle"], "ok": False, "message": str(e)}
 
-    if not result.get("ok") and config.get("aiEnabled"):
-        ai_res = ai_research_account(account["handle"], config)
-        if ai_res.get("ok"):
-            return ai_res
-        
-        # If AI failed too, return the AI error object so the UI shows the fallback attempt
-        ai_res["message"] = f"Graph: {result.get('message', 'Error')} | AI: {ai_res.get('message', 'Error')}"
-        return ai_res
-
-    return result
+    return {"handle": account["handle"], "ok": False, "message": "Graph API not configured."}
 
 def check_link(value):
     url = normalize_url(value)
@@ -507,10 +385,9 @@ class AppHandler(SimpleHTTPRequestHandler):
                         unique_map[h] = item
                 results = []
                 config = read_graph_config(include_token=True)
-                delay = 0.2 if config.get("aiProvider") == "ollama" else 1.0
                 for h in unique_map.keys():
                     results.append(research_influencer(h))
-                    time.sleep(delay) # Adjusted delay based on provider
+                    time.sleep(3.0) # Increased delay to avoid Meta Rate Limits
                 self.send_json(200, {"results": results})
                 return
 
@@ -530,8 +407,9 @@ def main():
     mimetypes.add_type("text/javascript", ".js")
     ensure_data_store()
     try:
-        server = ThreadingHTTPServer(("localhost", PORT), AppHandler)
-        print(f"Insta List is running at http://localhost:{PORT}")
+        server = ThreadingHTTPServer((HOST, PORT), AppHandler)
+        display_host = "localhost" if HOST == "0.0.0.0" else HOST
+        print(f"Insta List is running at http://{display_host}:{PORT}")
         server.serve_forever()
     except OSError as e:
         if e.errno in (98, 10048):

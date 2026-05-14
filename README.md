@@ -5,7 +5,6 @@ A local Instagram influencer audit app. It deduplicates influencer handles, show
 ## Prerequisites
 
 - **Runtime:** Python 3.10+ OR Node.js 18+
-- **AI Research (Optional):** To use the AI fallback, you need Ollama installed and running locally with a model like `llama3` or `mistral`.
 - **Graph API (Optional):** A Meta Developer App with Instagram Business Discovery permissions.
 
 ## Run
@@ -21,6 +20,22 @@ http://localhost:5173
 ```
 
 `start.ps1` uses Python first, then Node.js if Python is not available. The app has no third-party dependencies. Install Python from python.org or install Node.js 18+ if the start script says it cannot find a usable runtime.
+
+## Deploy on Koyeb
+
+Use the Python runtime. Koyeb can run the app with:
+
+```text
+python server.py
+```
+
+The server reads Koyeb's `PORT` environment variable and binds to `0.0.0.0`. No build command or third-party dependencies are required.
+
+The root `Procfile` tells Koyeb how to start the web service:
+
+```text
+web: python server.py
+```
 
 ## Graph API Setup
 
@@ -65,7 +80,7 @@ Use **Load list** to fill the influencer box with the saved education influencer
 
 The app has a small built-in resolver for common names, so `Cristiano Ronaldo` resolves to `@cristiano`. A live universal name search requires connecting an Instagram/compliant data API.
 
-When you run an audit, the server first researches each influencer with Graph API if configured. If Graph API is not configured, it falls back to a limited public profile-page check.
+When you run an audit, the server researches each influencer with Graph API if configured. Without Graph API settings, the app uses only the handles, counts, and post data you supplied.
 
 The Posts view groups imported/provider posts by week and shows the post date, info, hashtags, collaborators, and link status.
 

@@ -4,7 +4,7 @@
   "private": true,
   "description": "Local Instagram influencer list cleaner, post inspector, link checker, and history viewer.",
   "scripts": {
-    "start": "py server.py"
+    "start": "python server.py"
   },
   "engines": {
     "node": ">=18"

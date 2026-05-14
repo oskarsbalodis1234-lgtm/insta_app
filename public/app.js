@@ -10,12 +10,6 @@ const graphIgUserId = document.querySelector("#graphIgUserId");
 const graphAccessToken = document.querySelector("#graphAccessToken");
 const graphTestHandle = document.querySelector("#graphTestHandle");
 const graphStatus = document.querySelector("#graphStatus");
-const aiEnabled = document.querySelector("#aiEnabled");
-const aiApiKey = document.querySelector("#aiApiKey");
-const aiModel = document.querySelector("#aiModel");
-const aiProvider = document.querySelector("#aiProvider");
-const aiStatus = document.querySelector("#aiStatus");
-const saveAiButton = document.querySelector("#saveAiButton");
 const progressBar = document.querySelector("#progressBar");
 const progressPercent = document.querySelector("#progressPercent");
 const progressStatus = document.querySelector("#progressStatus");
@@ -25,11 +19,13 @@ const runButton = document.querySelector("#runButton");
 const seedButton = document.querySelector("#seedButton");
 const demoButton = document.querySelector("#demoButton");
 const clearButton = document.querySelector("#clearButton");
+const exportButton = document.querySelector("#exportButton");
 const influencerList = document.querySelector("#influencerList");
 const postsList = document.querySelector("#postsList");
 const historyList = document.querySelector("#historyList");
 const influencerViewButton = document.querySelector("#influencerViewButton");
 const postsViewButton = document.querySelector("#postsViewButton");
+const dashboardSection = document.querySelector("#dashboardSection");
 const dedupeCount = document.querySelector("#dedupeCount");
 const resultTitle = document.querySelector("#resultTitle");
 const influencerTotal = document.querySelector("#influencerTotal");
@@ -41,6 +37,7 @@ const postTemplate = document.querySelector("#postTemplate");
 let currentResults = [];
 let currentHistory = [];
 let currentView = "influencers";
+let statsChart = null;
 
 const knownAccountAliases = new Map([
   ["cristiano ronaldo", { handle: "cristiano", name: "Cristiano Ronaldo" }],
@@ -721,11 +718,69 @@ function getWeekKey(value) {
   return monday.toISOString().slice(0, 10);
 }
 
+function updateDashboard(results) {
+  const validResults = results.filter(r => r.followers > 0);
+  if (!validResults.length || !window.Chart) {
+    dashboardSection?.classList.add("hidden");
+    return;
+  }
+  dashboardSection?.classList.remove("hidden");
+  const ctx = document.getElementById('statsChart').getContext('2d');
+  
+  if (statsChart) statsChart.destroy();
+
+  const labels = validResults.map(r => `@${r.handle}`);
+  const data = validResults.map(r => r.followers);
+
+  statsChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Followers',
+        data: data,
+        backgroundColor: '#6366f1',
+        borderRadius: 6,
+        barThickness: 20
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { 
+        y: { beginAtZero: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8', font: { size: 10 } } },
+        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function exportToCSV() {
+  if (!currentResults.length) return alert("Run an analysis first to export data.");
+  const headers = ["Handle", "Name", "Followers", "Total Posts", "Source", "Timestamp"];
+  const rows = currentResults.map(inf => [
+    inf.handle,
+    `"${inf.name || ''}"`,
+    inf.followers || 0,
+    inf.postCount || 0,
+    inf.source || "manual",
+    inf.researchedAt || new Date().toISOString()
+  ]);
+  const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `influencer_report_${new Date().toISOString().slice(0,10)}.csv`;
+  link.click();
+}
+
 function renderResults(results) {
   currentResults = results;
   influencerList.className = "influencer-list";
   influencerList.textContent = "";
   renderPostsView(results);
+  updateDashboard(results);
 
   if (!results.length) {
     influencerList.className = "influencer-list empty-state";
@@ -749,13 +804,12 @@ function renderResults(results) {
     handleLink.rel = "noreferrer";
     handleLink.textContent = `@${influencer.handle}`;
 
-    const isAi = influencer.source === "ai";
     row.querySelector(".handle").textContent = "";
     row.querySelector(".handle").append(handleLink);
     row.querySelector(".meta").textContent = influencer.posts.length || influencer.researchMessage
-      ? `${influencer.resolved ? `Resolved from "${influencer.sourceName}" | ` : ""}${isAi ? "⚠️ AI ESTIMATE | " : "Graph API | "}${influencer.researchedAt ? "Refreshed now | " : ""}Click to view posts`
-      : `${influencer.resolved ? `Resolved from "${influencer.sourceName}" | ` : ""}${isAi ? "⚠️ AI ESTIMATE | " : "Graph API | "}${influencer.researchedAt ? "Refreshed now | " : ""}${influencer.researchMessage || ""}`;
-    row.querySelector(".followers").textContent = isAi ? `~${formatNumber(influencer.followers)}` : formatNumber(influencer.followers);
+      ? `${influencer.resolved ? `Resolved from "${influencer.sourceName}" | ` : ""}${influencer.source === "graph" ? "Graph API | " : ""}${influencer.researchedAt ? "Refreshed now | " : ""}Click to view posts`
+      : `${influencer.resolved ? `Resolved from "${influencer.sourceName}" | ` : ""}${influencer.source === "graph" ? "Graph API | " : ""}${influencer.researchedAt ? "Refreshed now | " : ""}${influencer.researchMessage || ""}`;
+    row.querySelector(".followers").textContent = formatNumber(influencer.followers);
     row.querySelector(".post-count").textContent = formatNumber(influencer.postCount);
     row.querySelector(".period-posts").textContent = influencer.posts.length;
     row.querySelector(".period-links").textContent = linkCount;
@@ -827,11 +881,7 @@ async function loadGraphConfig() {
       if (graphIgUserId) graphIgUserId.value = config.igUserId || "";
       if (graphAccessToken) graphAccessToken.placeholder = config.tokenPreview || "Paste new token to update";
       if (keywordsInput) keywordsInput.value = config.keywords || "";
-      if (aiApiKey) aiApiKey.placeholder = config.aiConfigured ? "Key saved" : "Paste Gemini Key";
-      if (aiModel) aiModel.value = config.aiModel || "gemini-2.0-flash";
-      if (aiEnabled) aiEnabled.checked = config.aiEnabled || false;
       updateGraphStatus(config.configured);
-      updateAiStatus(config.aiConfigured, config.aiEnabled);
     }
   } catch (err) { console.error("Failed to load Graph API config", err); }
 }
@@ -848,32 +898,6 @@ async function saveGraphConfig() {
       alert("Graph API settings saved locally.");
     }
   } catch (err) { alert("Failed to save Graph API settings."); }
-}
-
-async function saveAiConfig() {
-  const payload = { 
-    aiEnabled: aiEnabled.checked, 
-    aiProvider: aiProvider.value,
-    aiApiKey: aiApiKey.value, 
-    aiModel: aiModel.value 
-  };
-  try {
-    const response = await fetch("/api/graph-config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    if (response.ok) {
-      const config = await response.json();
-      aiApiKey.value = "";
-      aiApiKey.placeholder = "Key saved";
-      updateAiStatus(config.aiConfigured, config.aiEnabled);
-      alert("AI settings saved.");
-    }
-  } catch (err) { alert("Failed to save AI settings."); }
-}
-
-function updateAiStatus(configured, enabled) {
-  if (!aiStatus) return;
-  if (!enabled) { aiStatus.textContent = "Off"; aiStatus.className = "status-pill bad"; return; }
-  aiStatus.textContent = configured ? "On" : "Ready (No Key)";
-  aiStatus.className = `status-pill ${configured ? "good" : "bad"}`;
 }
 
 function updateGraphStatus(configured) {
@@ -910,8 +934,6 @@ async function runAnalysis() {
   const inputs = getResearchInputs();
   if (!inputs.length) return alert("Please enter at least one influencer handle or URL.");
 
-  saveAiConfig(); // Auto-save keywords and AI settings on run
-  
   const initial = buildResults();
   const total = inputs.length;
 
@@ -984,10 +1006,10 @@ function init() {
 
   if (runButton) runButton.addEventListener("click", runAnalysis);
   if (saveGraphButton) saveGraphButton.addEventListener("click", saveGraphConfig);
-  if (saveAiButton) saveAiButton.addEventListener("click", saveAiConfig);
   if (testGraphButton) testGraphButton.addEventListener("click", testGraphConfig);
   if (influencerViewButton) influencerViewButton.addEventListener("click", () => setActiveView("influencers"));
   if (postsViewButton) postsViewButton.addEventListener("click", () => setActiveView("posts"));
+  if (exportButton) exportButton.addEventListener("click", exportToCSV);
 
   if (seedButton) seedButton.addEventListener("click", () => {
     const uniqueHandles = [...new Set(savedInfluencerHandles)];
